@@ -1,0 +1,93 @@
+# Configuration for the ZED SDK custom object detector.
+# Model class IDs must match the IDs used when training/exporting the ONNX model.
+/**:
+  ros__parameters:
+    object_detection:
+      custom_onnx_file: '/home/jetson/sUNSWim/computer_vision/models/best_t2_2026.onnx' # Path to the exported ONNX model.
+      custom_onnx_input_size: 640                                                      # Must match the model's training input size.
+      custom_class_count: 5                                                            # Total number of detectable classes.
+
+      # Coloured buckets/drums (~60 cm diameter × 30 cm depth)
+      class_000:
+        label: 'cbuckets'
+        model_class_id: 0
+        enabled: true
+        confidence_threshold: 50.0
+        is_grounded: true                 # Object is assumed to stay on the floor.
+        is_static: false                  # Object may move if disturbed.
+        tracking_timeout: -1.0            # Never discard a track purely because it hasn't been seen.
+        tracking_max_dist: 0.4
+        min_box_width_meters: 0.45        # Approximate real object dimensions reject impossible detections.
+        max_box_width_meters: 0.75
+        min_box_height_meters: 0.2
+        max_box_height_meters: 0.4
+        object_acceleration_preset: 'LOW' # Smooths noisy tracking for slow-moving objects.
+        prediction_timeout_s: 1.5         # Continue predicting briefly through occlusions.
+        min_confirmation_time_s: 0.05     # Confirm detections almost immediately.
+
+      # Gate (1.5 m wide × 1.0 m tall)
+      class_001:
+        label: 'gate'
+        model_class_id: 1
+        enabled: true
+        confidence_threshold: 55.0
+        is_grounded: true                 # Gate rests on the pool floor.
+        is_static: false
+        tracking_timeout: -1.0
+        tracking_max_dist: 0.5
+        min_box_width_meters: 1.2         # Based on the gate's physical dimensions.
+        max_box_width_meters: 1.8
+        min_box_height_meters: 0.8
+        max_box_height_meters: 1.2
+        object_acceleration_preset: 'LOW' # Large pool objects should not jump between frames.
+        prediction_timeout_s: 1.5
+        min_confirmation_time_s: 0.05
+
+      # Flag (~1.6 cm diameter, ~80 cm tall)
+      class_002:
+        label: 'flag'
+        model_class_id: 2
+        enabled: true
+        confidence_threshold: 40.0        # Lower threshold because thin objects score lower.
+        is_grounded: false                # Extends through the water column rather than sitting on the floor.
+        is_static: false
+        tracking_timeout: -1.0
+        tracking_max_dist: 0.4
+        # Size filtering is disabled because stereo depth cannot reliably estimate such a thin object.
+        object_acceleration_preset: 'LOW'
+        prediction_timeout_s: 1.5
+        min_confirmation_time_s: 0.2      # Require longer persistence to reduce false positives.
+
+      # Flare (~15 cm diameter navigation pole)
+      class_003:
+        label: 'flare'
+        model_class_id: 3
+        enabled: true
+        confidence_threshold: 45.0        # Lower threshold because the object occupies few pixels.
+        is_grounded: true
+        is_static: false
+        tracking_timeout: -1.0
+        tracking_max_dist: 0.3            # Tighter tracking since position accuracy is important.
+        min_box_width_meters: 0.08        # Approximate physical diameter filters unrealistic detections.
+        max_box_width_meters: 0.25
+        object_acceleration_preset: 'LOW'
+        prediction_timeout_s: 1.0         # Recover quickly if the track becomes unreliable.
+        min_confirmation_time_s: 0.1
+
+      # Generic/fallback drum class
+      class_004:
+        label: 'tubs'
+        model_class_id: 4
+        enabled: true
+        confidence_threshold: 50.0
+        is_grounded: true
+        is_static: false
+        tracking_timeout: -1.0
+        tracking_max_dist: 0.4
+        min_box_width_meters: 0.45        # Matches the expected drum dimensions.
+        max_box_width_meters: 0.75
+        min_box_height_meters: 0.2
+        max_box_height_meters: 0.4
+        object_acceleration_preset: 'LOW'
+        prediction_timeout_s: 1.5
+        min_confirmation_time_s: 0.05
