@@ -22,3 +22,6 @@ This contains all of the packages where each of the packages will be responsible
 8. localisation: everything to do with localisation, vslam, visual_odom
 
 the thing is still how to keep everything input and output easily trackable, so that it will be easy for simulation
+
+Need to do in lab with Betty:
+- 

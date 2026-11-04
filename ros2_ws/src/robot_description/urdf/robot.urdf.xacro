@@ -1,0 +1,313 @@
+<?xml version="1.0"?>
+<robot name="sunswim" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!--
+
+  sUNSWim ROV for Gazebo Harmonic.
+  x forward, y left, z up. Origin = centre of the body box.
+
+  Spawn into a running world:
+    xacro sunswim.urdf.xacro > /tmp/sunswim.urdf
+    ros2 run ros_gz_sim create -file /tmp/sunswim.urdf -name sunswim -x -11 -z 1.0
+
+  Thruster commands (std_msgs/Float64 in gz, newtons, + = along thruster axis):
+    gz topic -t /model/sunswim/joint/thruster_FL_joint/cmd_thrust -m gz.msgs.Double -p 'data: 10'
+
+  Values marked GUESS need measuring on the real robot.
+-->
+<!--
+ ===================== numbers you will edit ===================== 
+-->
+<xacro:property name="total_mass" value="15.0"/>
+<!-- kg in air, GUESS -->
+<xacro:property name="buoyancy_margin" value="0.02"/>
+<!-- 2 % positive: floats up slowly, like a real ROV -->
+<xacro:property name="com_below_cob" value="0.03"/>
+<!--
+ m, centre of mass below centre of buoyancy (keeps it upright), GUESS 
+-->
+<xacro:property name="body_length" value="0.60"/>
+<xacro:property name="body_width" value="0.50"/>
+<xacro:property name="body_height" value="0.15"/>
+<!-- Blue Robotics T200-like thruster -->
+<xacro:property name="thruster_radius" value="0.04865"/>
+<xacro:property name="thruster_length" value="0.1134"/>
+<xacro:property name="thruster_mass" value="0.427"/>
+<xacro:property name="prop_mass" value="0.05"/>
+<xacro:property name="prop_diameter" value="0.076"/>
+<!-- m, GUESS -->
+<xacro:property name="max_thrust" value="50.0"/>
+<!-- N forward, ~5 kgf, GUESS -->
+<xacro:property name="min_thrust" value="-40.0"/>
+<!-- N reverse, GUESS -->
+<!--
+ ===================== derived (don't edit) ===================== 
+-->
+<!--
+ Buoyancy pushes up with 1000 kg/m^3 * g * (volume of ALL collision shapes).
+       Thrusters count with their real cylinder volume; the body collision box takes the rest
+       needed so that buoyancy = total_mass * (1 + margin) * g.                   
+-->
+<xacro:property name="thruster_volume" value="${pi * thruster_radius**2 * thruster_length}"/>
+<xacro:property name="thruster_box_side" value="${thruster_radius * pi**0.5}"/>
+<!-- side^2 = pi r^2 -->
+<xacro:property name="target_volume" value="${total_mass * (1 + buoyancy_margin) / 1000.0}"/>
+<xacro:property name="body_collision_height" value="${(target_volume - 8 * thruster_volume) / (body_length * body_width)}"/>
+<xacro:property name="camera_mass" value="0.2"/>
+<xacro:property name="camera_x" value="${body_length/2 + 0.02}"/>
+<xacro:property name="imu_mass" value="0.01"/>
+<xacro:property name="imu_x" value="0.1"/>
+<xacro:property name="body_mass" value="${total_mass - 8 * (thruster_mass + prop_mass) - camera_mass - imu_mass}"/>
+<!--
+ trim: shift the body's mass back so camera + IMU up front don't pitch the nose down 
+-->
+<xacro:property name="body_com_x" value="${-(camera_mass * camera_x + imu_mass * imu_x) / body_mass}"/>
+<!--
+ ===================== macros ===================== 
+-->
+<xacro:macro name="box_inertia" params="m x y z ox oz">
+    <inertial>
+        <origin xyz="${ox} 0 ${oz}" rpy="0 0 0"/>
+        <mass value="${m}"/>
+        <inertia ixx="${m/12*(y*y+z*z)}" ixy="0" ixz="0" iyy="${m/12*(x*x+z*z)}" iyz="0" izz="${m/12*(x*x+y*y)}"/>
+    </inertial>
+</xacro:macro>
+<xacro:macro name="cyl_inertia" params="m r h">
+    <inertial>
+        <mass value="${m}"/>
+        <inertia ixx="${m/12*(3*r*r+h*h)}" ixy="0" ixz="0" iyy="${m/12*(3*r*r+h*h)}" iyz="0" izz="${m/2*r*r}"/>
+    </inertial>
+</xacro:macro>
+<!-- ===================== body ===================== -->
+<link name="base_link">
+    <visual>
+        <geometry>
+            <box size="${body_length} ${body_width} ${body_height}"/>
+        </geometry>
+        <material name="Purple">
+            <color rgba="0.6 0.1 0.6 1.0"/>
+        </material>
+    </visual>
+    <!--
+    thin slab: its volume (not its look) sets the buoyancy 
+    -->
+    <collision>
+        <geometry>
+            <box size="${body_length} ${body_width} ${body_collision_height}"/>
+        </geometry>
+    </collision>
+    <!--
+    mass sits a little below the middle so the ROV self-rights 
+    -->
+    <xacro:box_inertia m="${body_mass}" x="${body_length}" y="${body_width}" z="${body_height}" ox="${body_com_x}" oz="${-com_below_cob}"/>
+    <gazebo reference="base_link">
+        <visual><transparency>0.6</transparency></visual>
+    </gazebo>
+</link>
+<!--
+ ===================== thrusters ===================== 
+-->
+<!--
+ Thrust acts along the housing's local z axis (the propeller joint axis). 
+-->
+<xacro:macro name="thruster" params="name x y z roll pitch yaw">
+<joint name="${name}_housing_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="${name}_housing_link"/>
+    <origin xyz="${x} ${y} ${z}" rpy="${roll} ${pitch} ${yaw}"/>
+</joint>
+<link name="${name}_housing_link">
+    <visual>
+        <geometry>
+            <cylinder radius="${thruster_radius}" length="${thruster_length}"/>
+        </geometry>
+        <material name="DarkGray">
+            <color rgba="0.2 0.2 0.2 1.0"/>
+        </material>
+    </visual>
+    <!--
+    collision is a BOX with the same volume as the cylinder:
+            Gazebo's depth-layered (graded) buoyancy ignores cylinders 
+    -->
+    <collision>
+        <geometry>
+            <box size="${thruster_box_side} ${thruster_box_side} ${thruster_length}"/>
+        </geometry>
+    </collision>
+    <xacro:cyl_inertia m="${thruster_mass}" r="${thruster_radius}" h="${thruster_length}"/>
+</link>
+<joint name="${name}_joint" type="continuous">
+<parent link="${name}_housing_link"/>
+<child link="${name}_prop_link"/>
+<origin xyz="0 0 0" rpy="0 0 0"/>
+<axis xyz="0 0 1"/>
+</joint>
+<link name="${name}_prop_link">
+    <visual>
+    <geometry>
+    <cylinder radius="${thruster_radius*0.9}" length="0.01"/>
+    </geometry>
+    <material name="Black">
+    <color rgba="0.05 0.05 0.05 1.0"/>
+    </material>
+    </visual>
+    <!-- no collision: would add fake buoyancy -->
+    <xacro:cyl_inertia m="${prop_mass}" r="${thruster_radius}" h="0.01"/>
+</link>
+<gazebo>
+<plugin filename="gz-sim-thruster-system" name="gz::sim::systems::Thruster">
+<namespace>sunswim</namespace>
+<joint_name>${name}_joint</joint_name>
+<thrust_coefficient>0.004422</thrust_coefficient>
+<fluid_density>1000</fluid_density>
+<propeller_diameter>${prop_diameter}</propeller_diameter>
+<max_thrust_cmd>${max_thrust}</max_thrust_cmd>
+<min_thrust_cmd>${min_thrust}</min_thrust_cmd>
+</plugin>
+</gazebo>
+</xacro:macro>
+<xacro:property name="tx" value="${body_length/2 - 0.05}"/>
+<xacro:property name="ty" value="${body_width/2 - 0.05}"/>
+<!--
+ 4 horizontal, vectored at 45 deg (layout from the team xacro) 
+-->
+<xacro:thruster name="thruster_FL" x="${tx}" y="${ty}" z="0" roll="${pi/2}" pitch="0" yaw="${pi/4}"/>
+<xacro:thruster name="thruster_FR" x="${tx}" y="${-ty}" z="0" roll="${pi/2}" pitch="0" yaw="${-pi/4}"/>
+<xacro:thruster name="thruster_RL" x="${-tx}" y="${ty}" z="0" roll="${pi/2}" pitch="0" yaw="${3*pi/4}"/>
+<xacro:thruster name="thruster_RR" x="${-tx}" y="${-ty}" z="0" roll="${pi/2}" pitch="0" yaw="${-3*pi/4}"/>
+<!-- 4 vertical (axis = +z, + thrust pushes up) -->
+<xacro:thruster name="thruster_VFL" x="${body_length/4-0.05}" y="${ty}" z="0" roll="0" pitch="0" yaw="0"/>
+<xacro:thruster name="thruster_VRL" x="${-(body_length/4-0.05)}" y="${ty}" z="0" roll="0" pitch="0" yaw="0"/>
+<xacro:thruster name="thruster_VFR" x="${body_length/4-0.05}" y="${-ty}" z="0" roll="0" pitch="0" yaw="0"/>
+<xacro:thruster name="thruster_VRR" x="${-(body_length/4-0.05)}" y="${-ty}" z="0" roll="0" pitch="0" yaw="0"/>
+<!--
+ ===================== forward camera (stands in for the ZED) ===================== 
+-->
+<link name="camera_link">
+    <visual>
+        <geometry>
+            <box size="0.03 0.175 0.03"/>
+        </geometry>
+        <material name="Gray">
+            <color rgba="0.3 0.3 0.3 1.0"/>
+        </material>
+    </visual>
+    <inertial>
+        <mass value="${camera_mass}"/>
+        <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/>
+    </inertial>
+</link>
+<joint name="camera_joint" type="fixed">
+<parent link="base_link"/>
+<child link="camera_link"/>
+<origin xyz="${camera_x} 0 0" rpy="0 0 0"/>
+<!-- just in front of the body -->
+</joint>
+<gazebo reference="camera_link">
+<sensor name="front_camera" type="rgbd_camera">
+<always_on>true</always_on>
+<update_rate>10</update_rate>
+<pose>0.02 0 0 0 0 0</pose>
+<!--
+ lens just in front of the camera box, not inside it 
+-->
+<topic>cam</topic>
+<!--
+ gives /cam/image, /cam/depth_image, /cam/camera_info 
+-->
+<gz_frame_id>camera_link</gz_frame_id>
+<camera>
+<horizontal_fov>1.482</horizontal_fov>
+<!-- replace with underwater calibration -->
+<image>
+<width>1280</width>
+<height>720</height>
+</image>
+<clip>
+<near>0.05</near>
+<far>25</far>
+</clip>
+</camera>
+</sensor>
+</gazebo>
+<!-- ===================== IMU ===================== -->
+<link name="imu_link">
+<inertial>
+<mass value="${imu_mass}"/>
+<inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+</inertial>
+</link>
+<joint name="imu_joint" type="fixed">
+<parent link="base_link"/>
+<child link="imu_link"/>
+<origin xyz="${imu_x} 0 0.05" rpy="0 0 0"/>
+</joint>
+<gazebo reference="imu_link">
+<sensor name="imu_sensor" type="imu">
+<always_on>true</always_on>
+<update_rate>100</update_rate>
+<topic>imu/data</topic>
+<gz_frame_id>imu_link</gz_frame_id>
+<imu>
+<angular_velocity>
+<x>
+<noise type="gaussian">
+<mean>0</mean>
+<stddev>2e-4</stddev>
+</noise>
+</x>
+<y>
+<noise type="gaussian">
+<mean>0</mean>
+<stddev>2e-4</stddev>
+</noise>
+</y>
+<z>
+<noise type="gaussian">
+<mean>0</mean>
+<stddev>2e-4</stddev>
+</noise>
+</z>
+</angular_velocity>
+</imu>
+</sensor>
+</gazebo>
+<!--
+ ===================== water drag ===================== 
+-->
+<!--
+ Fossen notation. DAMPING MUST BE NEGATIVE (positive = adds energy).
+       u,v,w = surge/sway/heave speed; p,q,r = roll/pitch/yaw rate. All GUESS. 
+-->
+<gazebo>
+<plugin filename="gz-sim-hydrodynamics-system" name="gz::sim::systems::Hydrodynamics">
+<link_name>base_link</link_name>
+<water_density>1000</water_density>
+<!--
+ added mass: left at 0 for now (non-zero can go unstable; tune later) 
+-->
+<xDotU>0</xDotU>
+<yDotV>0</yDotV>
+<zDotW>0</zDotW>
+<kDotP>0</kDotP>
+<mDotQ>0</mDotQ>
+<nDotR>0</nDotR>
+<!-- linear drag -->
+<xU>-10</xU>
+<yV>-15</yV>
+<zW>-20</zW>
+<kP>-2</kP>
+<mQ>-2</mQ>
+<nR>-2</nR>
+<!-- quadratic drag -->
+<xUabsU>-30</xUabsU>
+<yVabsV>-40</yVabsV>
+<zWabsW>-50</zWabsW>
+<kPabsP>-3</kPabsP>
+<mQabsQ>-3</mQabsQ>
+<nRabsR>-3</nRabsR>
+</plugin>
+<plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+<topic>joint_states</topic>
+</plugin>
+</gazebo>
+</robot>
