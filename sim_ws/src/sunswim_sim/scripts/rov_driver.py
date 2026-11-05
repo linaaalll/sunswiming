@@ -8,8 +8,8 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
-from gz.msgs10.image_pb2 import Double
-from gz.msgs10.image_pb2 import Pose_V
+from gz.msgs10.double_pb2 import Double
+from gz.msgs10.pose_v_pb2 import Pose_V
 from gz.transport13 import Node as GzNode
 
 #--- Tuning of the forces
@@ -70,10 +70,10 @@ class RovDriver(Node):
     def on_pose(self, msg):
         for p in msg.pose:
             if p.name == self.model:
-                q = p.orientaion
+                q = p.orientation
                 with self.lock:
                     self.z = p.position.z
-                    self.yaw = math.atan(2 * (q.w * q.z + q.x * q.y), 
+                    self.yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 
                                          1 - 2 * (q.y * q.y + q.z * q.z))
 
     def send(self, name, force):
@@ -101,11 +101,11 @@ class RovDriver(Node):
 
         u = lambda v: float(np.clip(v, -1.0, 1.0))
 
-        if abs(cmd.linear.z) < 0.05 or self.z_sp is None:
+        if abs(cmd.linear.z) > 0.05 or self.z_sp is None:
             fz = u(cmd.linear.z) * MAX_FORCE + BUOYANCY_FF
             self.z_sp, self.z_int = z, 0.0
         else:
-            err = self.z.sp - z
+            err = self.z_sp - z
             self.z_int = float(np.clip(self.z_int + err * dt, -2.0, 2.0))
             fz = DEPTH_KP * err + DEPTH_KI * self.z_int - DEPTH_KD * self.vz + BUOYANCY_FF
 
@@ -117,7 +117,7 @@ class RovDriver(Node):
             mz = YAW_KP * wrap(self.yaw_sp - yaw) - YAW_KD * self.r
 
         # thruster mixing I guess
-        fx, fy = u(cmd.linea.x) * MAX_FORCE, u(cmd.linear.y) * MAX_FORCE
+        fx, fy = u(cmd.linear.x) * MAX_FORCE, u(cmd.linear.y) * MAX_FORCE
         t = A_INV @ np.array([fx, fy, mz])
         biggest = np.max(np.abs(t))
 

@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
 <robot name="sunswim" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<xacro:arg name="ardusub" default="false"/>
 <!--
 
   sUNSWim ROV for Gazebo Harmonic.
@@ -99,10 +100,11 @@
     mass sits a little below the middle so the ROV self-rights 
     -->
     <xacro:box_inertia m="${body_mass}" x="${body_length}" y="${body_width}" z="${body_height}" ox="${body_com_x}" oz="${-com_below_cob}"/>
-    <gazebo reference="base_link">
-        <visual><transparency>0.6</transparency></visual>
-    </gazebo>
 </link>
+
+<gazebo reference="base_link">
+    <visual><transparency>0.6</transparency></visual>
+</gazebo>
 <!--
  ===================== thrusters ===================== 
 -->
@@ -310,4 +312,39 @@
 <topic>joint_states</topic>
 </plugin>
 </gazebo>
+
+<xacro:macro name="ap_channel" params="ch joint">
+  <control channel="${ch}">
+    <jointName>${joint}</jointName>
+    <servo_min>1100</servo_min>
+    <servo_max>1900</servo_max>
+    <type>COMMAND</type>
+    <cmd_topic>/model/sunswim/joint/${joint}/cmd_thrust</cmd_topic>
+    <offset>-0.5</offset>
+    <multiplier>100</multiplier>
+  </control>
+</xacro:macro>
+
+<xacro:if value="$(arg ardusub)">
+  <gazebo>
+    <plugin name="ArduPilotPlugin" filename="ArduPilotPlugin">
+      <fdm_addr>127.0.0.1</fdm_addr>
+      <fdm_port_in>9002</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <lock_step>1</lock_step>
+      <modelXYZToAirplaneXForwardZDown>0 0 0 3.141593 0 0</modelXYZToAirplaneXForwardZDown>
+      <gazeboXYZToNED>0 0 0 3.141593 0 0</gazeboXYZToNED>
+      <imuName>imu_sensor</imuName>
+      <!-- GUESS at ArduSub vectored_6dof order: verify in plan step 3 -->
+      <xacro:ap_channel ch="0" joint="thruster_FR_joint"/>
+      <xacro:ap_channel ch="1" joint="thruster_FL_joint"/>
+      <xacro:ap_channel ch="2" joint="thruster_RR_joint"/>
+      <xacro:ap_channel ch="3" joint="thruster_RL_joint"/>
+      <xacro:ap_channel ch="4" joint="thruster_VFR_joint"/>
+      <xacro:ap_channel ch="5" joint="thruster_VFL_joint"/>
+      <xacro:ap_channel ch="6" joint="thruster_VRR_joint"/>
+      <xacro:ap_channel ch="7" joint="thruster_VRL_joint"/>
+    </plugin>
+  </gazebo>
+</xacro:if>
 </robot>
