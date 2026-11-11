@@ -6,9 +6,9 @@ The values below are BlueOS defaults, CONFIRM them on the real rov!
 """
 
 # ---- network ----
-PI_IP = "192.168.2.2"
-JETSON_IP = "192.168.2.1"      # the ip the pi sends mavlink TO
-ETH_IFACE = "eth0"             # run `ip link` on the jetson to get the real name
+PI_IP = "192.168.1.68"
+JETSON_IP = "192.168.1.69"      # the ip the pi sends mavlink TO
+ETH_IFACE = "enP8p1s0"             # run `ip link` on the jetson to get the real name
 
 # Only one program can listen on a udp port. If MAVROS is running it owns 14550,
 # so either stop MAVROS before the pymavlink checks, or add a second mavlink
