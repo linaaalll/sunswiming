@@ -3,3 +3,6 @@ install/
 log/
 __pycache__/
 *.pyc
+
+# rosbag data stays out of git, each run's info.txt is kept
+bags/*/bag/
