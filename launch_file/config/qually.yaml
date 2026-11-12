@@ -30,6 +30,11 @@ qually_fsm:
     # dry_run is set from the launch command (dry_run:=false), not here,
     # so that arming is always something you typed on purpose.
     require_detector: true    # WAIT until the detector is publishing
+    # Start trigger: the run only begins after the vehicle has been held at
+    # least start_depth_m underwater for start_hold_sec. Then the countdown
+    # below runs, then it arms. 0.0 = no trigger, countdown only.
+    start_depth_m: 0.3
+    start_hold_sec: 3.0
     start_delay_sec: 5.0      # countdown once everything is alive
     max_run_sec: 120.0        # whole run longer than this -> ABORT
 

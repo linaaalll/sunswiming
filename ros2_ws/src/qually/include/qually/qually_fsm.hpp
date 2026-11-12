@@ -126,6 +126,8 @@ private:
   bool have_gate_ = false;
   int gate_seen_streak_ = 0;                  // frames in a row with found=true
   int depth_ok_ticks_ = 0;
+  bool underwater_ = false;                   // WAIT: start trigger, deep enough right now?
+  rclcpp::Time underwater_since_;
   int gate_lost_ticks_ = 0;                   // APPROACH: calls in a row without the gate
   double last_separation_ = 0.0;              // APPROACH: gate width last time we saw it
   int turn_ok_ticks_ = 0;                     // TURN: calls in a row pointing the right way
@@ -146,6 +148,8 @@ private:
   bool dry_run_;                // true = never arm, never change mode
   bool require_detector_;       // WAIT also waits for /qually/gate
   double start_delay_sec_;      // hands-clear countdown in WAIT
+  double start_depth_m_;        // WAIT: start trigger, hold it this deep (0 = off)
+  double start_hold_sec_;       // WAIT: ...for this long
   double max_run_sec_;          // whole run longer than this -> ABORT
 
   double target_depth_m_;       // DIVE: how deep

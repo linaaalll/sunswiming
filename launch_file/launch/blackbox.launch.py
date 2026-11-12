@@ -99,7 +99,8 @@ MY_TOPICS = [
     '/controller/target',                    # what the brain asked for
     '/controller/debug',                     # PID: target, error, P/I/D, output
     '/cmd_vel',                              # what went to rc_control
-    # '/qually/gate/debug_image/compressed', # detector overlay (a second video)
+    '/qually/gate/debug_image/compressed',   # camera with the detector's lines drawn on
+    '/qually/gate/mask/compressed',          # the black/white colour mask
 ]
 
 
