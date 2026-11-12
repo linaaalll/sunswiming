@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'colour_gate_detector = object_detection.colour_gate_detector:main',
         ],
     },
 )

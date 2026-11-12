@@ -5,6 +5,7 @@
 * Input: geometry_msgs/Twist --> <cmd_vel_topic>
 *       linear.x = forward
 *       linear.y = lateral
+*       linear.z = vertical (+ up). In ALT_HOLD, 0 = hold depth
 *       angular.z = yaw
 *
 * Output: mavros_msgs/OverrideRCIn on mavros/rc/override
@@ -41,6 +42,7 @@ public:
     max_fwd_vel_ = this->declare_parameter<double>("max_fwd_vel", 0.5);      // m/s
     max_lat_vel_ = this->declare_parameter<double>("max_lat_vel", 0.3);      // m/s
     max_yaw_rate_ = this->declare_parameter<double>("max_yaw_rate", 0.6);    // rad/s
+    max_vert_vel_ = this->declare_parameter<double>("max_vert_vel", 0.3);    // m/s
 
     // Safety: if cmd_vel not received for this long, output neutral RC
     cmd_timeout_sec_ = this->declare_parameter<double>("cmd_timeout_sec", 0.5);
@@ -52,7 +54,7 @@ public:
       cmd_vel_topic_, 10,
       std::bind(&Controller::cmdVelCb, this, std::placeholders::_1));
 
-    last_cmd_time_ = this->now();
+    last_cmd_time_ = steady_clock_.now();
     last_cmd_ = geometry_msgs::msg::Twist();
 
     auto period = std::chrono::duration<double>(1.0 / std::max(1.0, publish_rate_hz_));
@@ -96,7 +98,7 @@ private:
   void cmdVelCb(const geometry_msgs::msg::Twist::SharedPtr msg) {
 
     last_cmd_ = *msg;
-    last_cmd_time_ = this->now();
+    last_cmd_time_ = steady_clock_.now();
     if (!have_command_) {
       RCLCPP_INFO(get_logger(), "COMMAND_STREAM first command received on %s", cmd_vel_topic_.c_str());
     }
@@ -108,7 +110,7 @@ private:
 // build and publish the rc override 
   void publishRc() {
 
-    const auto now = this->now();
+    const auto now = steady_clock_.now();
 
     // Timeout check -- is nav2 still commanding? 
     const double age = (now - last_cmd_time_).seconds();
@@ -127,6 +129,7 @@ private:
     double x_norm = 0.0;
     double y_norm = 0.0;
     double r_norm = 0.0;
+    double z_norm = 0.0;
 
     if (!timed_out) {
       // Normalize Twist to [-1, 1] in each axis
@@ -136,9 +139,10 @@ private:
       x_norm = std::clamp(x_norm, -1.0, 1.0);
       y_norm = std::clamp(y_norm, -1.0, 1.0);
       r_norm = std::clamp(r_norm, -1.0, 1.0);
+      z_norm = std::clamp(safeDiv(last_cmd_.linear.z, max_vert_vel_), -1.0, 1.0);
     } else {
       // Fail-safe: stop
-      x_norm = 0.0; y_norm = 0.0; r_norm = 0.0;
+      x_norm = 0.0; y_norm = 0.0; r_norm = 0.0; z_norm = 0.0;
     }
 
     mavros_msgs::msg::OverrideRCIn out;
@@ -149,9 +153,12 @@ private:
     out.channels[4] = pwmFromNormalized(x_norm);
     out.channels[5] = pwmFromNormalized(y_norm);
     out.channels[3] = pwmFromNormalized(r_norm);
+    // z -> ch2 (throttle). 1500 = no vertical thrust in MANUAL,
+    // "hold this depth" in ALT_HOLD.
+    out.channels[2] = pwmFromNormalized(z_norm);
 
     rc_pub_->publish(out);
-    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
+    RCLCPP_INFO_THROTTLE(get_logger(), steady_clock_, 1000,
       "RC_OUTPUT have_command=%s timed_out=%s command_age_s=%.3f "
       "input_forward=%+.3f input_lateral=%+.3f input_yaw=%+.3f "
       "effort_forward=%+.3f effort_lateral=%+.3f effort_yaw=%+.3f "
@@ -169,12 +176,17 @@ private:
   double max_fwd_vel_;
   double max_lat_vel_;
   double max_yaw_rate_;
+  double max_vert_vel_;
   double cmd_timeout_sec_;
 
   rclcpp::Publisher<mavros_msgs::msg::OverrideRCIn>::SharedPtr rc_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
+  // Durations and timeouts are measured on the steady clock, which only ever
+  // counts forwards. The normal clock (now()) jumps when the computer syncs
+  // its time over the network, which would fire or freeze every timeout.
+  rclcpp::Clock steady_clock_{RCL_STEADY_TIME};
   rclcpp::Time last_cmd_time_;
   geometry_msgs::msg::Twist last_cmd_;
   bool have_command_ = false, was_timed_out_ = false;

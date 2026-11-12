@@ -94,8 +94,12 @@ SYSTEM_TOPICS = [
 # YOUR nodes. Add every topic the brain / controller / tasks publish, this is
 # what explains "why did it do that".
 MY_TOPICS = [
-    # '/brain/state',
-    # '/controller/setpoint',
+    '/qually/state',                         # which FSM state, every tick
+    '/qually/gate',                          # what the detector saw
+    '/controller/target',                    # what the brain asked for
+    '/controller/debug',                     # PID: target, error, P/I/D, output
+    '/cmd_vel',                              # what went to rc_control
+    # '/qually/gate/debug_image/compressed', # detector overlay (a second video)
 ]
 
 

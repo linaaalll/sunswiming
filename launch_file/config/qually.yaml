@@ -1,0 +1,65 @@
+# Every number you might want to change for the qualifier, in one place.
+# Edit, save, relaunch. No rebuild needed.
+#
+# "effort" always means a fraction of full stick: 0.25 = a quarter power.
+
+rc_control:
+  ros__parameters:
+    publish_rate_hz: 20.0
+    cmd_timeout_sec: 0.5      # no command for this long -> neutral
+    # 1.0 here means cmd_vel is read directly as effort (-1 to +1).
+    max_fwd_vel: 1.0
+    max_lat_vel: 1.0
+    max_yaw_rate: 1.0
+    max_vert_vel: 1.0
+
+heading_controller:
+  ros__parameters:
+    rate_hz: 20.0
+    # Gains are in "effort per degree of error". All zero = no yaw at all.
+    # Start with kp only. Change live with:
+    #   ros2 param set /heading_controller kp 0.01
+    kp: 0.01
+    ki: 0.005
+    kd: 0.002
+    output_limit: 0.4         # never yaw harder than this
+    integral_limit: 0.15      # the I term alone never exceeds this
+
+qually_fsm:
+  ros__parameters:
+    # dry_run is set from the launch command (dry_run:=false), not here,
+    # so that arming is always something you typed on purpose.
+    require_detector: true    # WAIT until the detector is publishing
+    start_delay_sec: 5.0      # countdown once everything is alive
+    max_run_sec: 120.0        # whole run longer than this -> ABORT
+
+    # DIVE
+    target_depth_m: 0.8
+    depth_tolerance_m: 0.1
+    dive_effort: 0.3
+
+    # SEARCH
+    search_effort: 0.2
+    gate_confirm_frames: 5    # found this many frames in a row = real
+    search_timeout_sec: 40.0
+
+    # APPROACH
+    approach_effort: 0.25
+    steer_gain_deg: 15.0      # gate fully at the edge -> aim this many degrees over
+    commit_separation: 0.7    # poles this far apart (fraction of image) -> COMMIT
+    gate_lost_sec: 1.0        # no detection for this long = lost
+
+    # COMMIT
+    commit_effort: 0.5
+    commit_sec: 6.0           # how long to drive blind through the gate
+
+colour_gate_detector:
+  ros__parameters:
+    image_topic: /zed/zed_node/rgb/color/rect/image/compressed
+    # HSV range of the pole colour. These are SIM values (clear and murky),
+    # wide on purpose. Retune from pool footage with vision_tuning/view_mask.py.
+    #        hue(0-179) sat(0-255) val(0-255)
+    hsv_low: [5, 40, 80]
+    hsv_high: [84, 255, 255]
+    min_area: 80              # blobs smaller than this (pixels) are noise
+    debug_every: 2            # publish the debug image every Nth frame

@@ -3,14 +3,16 @@
 <package format="3">
   <name>qually</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>The qualifier brain: a state machine that takes the vehicle through the gate</description>
   <maintainer email="linalin36537@gmail.com">lina</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>interfaces</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

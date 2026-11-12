@@ -1,5 +1,6 @@
 import argparse
 import math
+import random
 import threading
 import time
 
@@ -43,9 +44,21 @@ def wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 class RovDriver(Node):
-    def __init__(self, world, model, max_thrust):
+    def __init__(self, world, model, max_thrust, weak="", weak_factor=0.7, yaw_hold=True):
         super().__init__("rov_driver")
         self.model, self.max_thrust = model, max_thrust
+        self.yaw_hold = yaw_hold
+        # Fault injection: one horizontal thruster only gives part of its thrust.
+        # weak = "" (none), "random", or a name: FL, FR, RL, RR.
+        self.scale = {}
+        if weak:
+            name = random.choice(list(H)) if weak == "random" else weak.upper()
+            if name not in H:
+                raise SystemExit(f"--weak must be random or one of {list(H)}, got '{weak}'")
+            self.scale[name] = weak_factor
+            self.get_logger().warn(f"FAULT: thruster {name} only gives {weak_factor:.0%} thrust")
+        if not yaw_hold:
+            self.get_logger().warn("yaw hold OFF: nothing but /cmd_vel steers")
         self.cmd = Twist()
         self.lock = threading.Lock()
         self.z = self.yaw = None
@@ -78,7 +91,7 @@ class RovDriver(Node):
 
     def send(self, name, force):
         m = Double()
-        m.data = float(np.clip(force, -self.max_thrust, self.max_thrust))
+        m.data = float(np.clip(force, -self.max_thrust, self.max_thrust)) * self.scale.get(name, 1.0)
         self.pubs[name].publish(m)
 
     def step(self):
@@ -110,7 +123,7 @@ class RovDriver(Node):
             fz = DEPTH_KP * err + DEPTH_KI * self.z_int - DEPTH_KD * self.vz + BUOYANCY_FF
 
         # may turning be smooth too
-        if abs(cmd.angular.z) > 0.05 or self.yaw_sp is None:
+        if not self.yaw_hold or abs(cmd.angular.z) > 0.05 or self.yaw_sp is None:
             mz = u(cmd.angular.z) * MAX_TURN
             self.yaw_sp = yaw
         else:
@@ -134,10 +147,15 @@ def main():
     ap.add_argument("--world", default="pool_qual")
     ap.add_argument("--model", default="sunswim")
     ap.add_argument("--max-thrust", type=float, default=40.0, help="N per thruster")
-    a = ap.parse_args()
+    ap.add_argument("--weak", default="", help="random, or FL / FR / RL / RR")
+    ap.add_argument("--weak-factor", type=float, default=0.7, help="0.7 = 70%% thrust")
+    ap.add_argument("--no-yaw-hold", action="store_true", help="turn off the built-in yaw hold")
+    # parse_known_args: ignore the extra --ros-args the launch file passes
+    # (it uses them to move /cmd_vel to /sim/cmd_vel in auto mode).
+    a, _ = ap.parse_known_args()
     rclpy.init()
 
-    node = RovDriver(a.world, a.model, a.max_thrust)
+    node = RovDriver(a.world, a.model, a.max_thrust, a.weak, a.weak_factor, not a.no_yaw_hold)
 
     try:
         rclpy.spin(node)

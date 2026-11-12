@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'qually_monitor = monitor.qually_monitor:main',
         ],
     },
 )
