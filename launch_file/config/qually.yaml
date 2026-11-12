@@ -55,8 +55,8 @@ qually_fsm:
     gate_lost_sec: 1.0        # no detection for this long = lost
 
     # COMMIT
-    commit_effort: 0.5
-    commit_sec: 6.0           # how long to drive blind through the gate
+    commit_effort: 0.2
+    commit_sec: 8.0           # how long to drive blind through the gate
 
 colour_gate_detector:
   ros__parameters:
