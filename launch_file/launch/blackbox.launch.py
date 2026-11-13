@@ -50,7 +50,7 @@ MAVROS_TOPICS = [
     '/mavros/state',                         # armed? mode? connected?
     '/mavros/statustext/recv',               # ArduSub's own warnings / errors
     '/mavros/imu/data',                      # orientation, gyro, accel
-    '/mavros/imu/static_pressure',           # pressure -> depth
+    '/mavros/imu/static_pressure',           # INTERNAL barometer (air inside the hull), NOT depth
     '/mavros/global_position/rel_alt',       # depth as ArduSub sees it
     '/mavros/local_position/pose',           # ArduSub's position estimate
     '/mavros/local_position/velocity_body',  # ArduSub's velocity estimate

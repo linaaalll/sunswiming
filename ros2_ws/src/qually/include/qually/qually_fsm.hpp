@@ -32,6 +32,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "mavros_msgs/msg/state.hpp"
 #include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/srv/message_interval.hpp"
 #include "mavros_msgs/srv/set_mode.hpp"
 
 #include "interfaces/msg/control_target.hpp"
@@ -102,6 +103,7 @@ private:
 
   // ---- talking to ArduSub -------------------------------------------------
   void requestMode(const std::string & mode);
+  void requestSensorRates();                  // ask ArduSub to send depth + attitude faster
   double holdDepth();                         // vertical effort for our own depth hold
   void requestArm(bool arm);
 
@@ -133,6 +135,7 @@ private:
   double last_separation_ = 0.0;              // APPROACH: gate width last time we saw it
   int turn_ok_ticks_ = 0;                     // TURN: calls in a row pointing the right way
   int passes_done_ = 0;                       // how many times we went through the gate
+  bool rates_requested_ = false;
   double depth_integral_ = 0.0;               // our depth hold: running total of the error
 
   // ---- our own memory ------------------------------------------------------
@@ -150,6 +153,7 @@ private:
   bool dry_run_;                // true = never arm, never change mode
   bool require_detector_;       // WAIT also waits for /qually/gate
   double start_delay_sec_;      // hands-clear countdown in WAIT
+  double sensor_rate_hz_;       // depth + attitude rate asked from ArduSub (0 = leave alone)
   double start_depth_m_;        // WAIT: start trigger, hold it this deep (0 = off)
   double start_hold_sec_;       // WAIT: ...for this long
   double max_run_sec_;          // whole run longer than this -> ABORT
@@ -185,6 +189,7 @@ private:
 
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr mode_client_;
   rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arm_client_;
+  rclcpp::Client<mavros_msgs::srv::MessageInterval>::SharedPtr rate_client_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 };

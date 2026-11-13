@@ -30,6 +30,7 @@ QuallyFsm::QuallyFsm()
   dry_run_ = declare_parameter<bool>("dry_run", true);
   require_detector_ = declare_parameter<bool>("require_detector", true);
   start_delay_sec_ = declare_parameter<double>("start_delay_sec", 5.0);
+  sensor_rate_hz_ = declare_parameter<double>("sensor_rate_hz", 20.0);
   max_run_sec_ = declare_parameter<double>("max_run_sec", 120.0);
 
   target_depth_m_ = declare_parameter<double>("target_depth_m", 0.8);
@@ -91,6 +92,7 @@ QuallyFsm::QuallyFsm()
 
   mode_client_ = create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
   arm_client_ = create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arming");
+  rate_client_ = create_client<mavros_msgs::srv::MessageInterval>("/mavros/set_message_interval");
 
   state_entered_ = steadyNow();
   run_started_ = steadyNow();
@@ -162,6 +164,11 @@ void QuallyFsm::transitionTo(State next, const std::string & why)
 void QuallyFsm::stateWait()
 {
   commandStop();
+
+  // As soon as the flight controller is there, ask it for faster data (once).
+  if (!rates_requested_ && have_mavros_state_ && mavros_state_.connected) {
+    requestSensorRates();
+  }
 
   const char * missing = nullptr;
   if (!have_mavros_state_ || !mavros_state_.connected) {
@@ -458,6 +465,36 @@ bool QuallyFsm::gateFresh() const
 bool QuallyFsm::gateVisible() const
 {
   return gateFresh() && gate_.found;
+}
+
+// By default ArduSub sends depth about 3 times a second and attitude about 9.
+// That is slow for holding depth and heading ourselves, so ask for more.
+// Depth comes from GLOBAL_POSITION_INT (id 33): ArduSub fills it from the
+// external pressure sensor. Attitude is ATTITUDE (id 30).
+// This only changes how often it talks, nothing about how it flies, and it is
+// forgotten when the flight controller restarts.
+void QuallyFsm::requestSensorRates()
+{
+  rates_requested_ = true;
+  if (sensor_rate_hz_ <= 0.0) {
+    return;
+  }
+  if (!rate_client_->service_is_ready()) {
+    RCLCPP_WARN(get_logger(), "/mavros/set_message_interval not available, sensor rates left as they are");
+    return;
+  }
+  for (const uint32_t id : {33u, 30u}) {
+    auto request = std::make_shared<mavros_msgs::srv::MessageInterval::Request>();
+    request->message_id = id;
+    request->message_rate = static_cast<float>(sensor_rate_hz_);
+    rate_client_->async_send_request(
+      request,
+      [this, id](rclcpp::Client<mavros_msgs::srv::MessageInterval>::SharedFuture future) {
+        RCLCPP_INFO(
+          get_logger(), "asked ArduSub for message %u at %.0f Hz: %s", id, sensor_rate_hz_,
+          future.get()->success ? "ok" : "REFUSED");
+      });
+  }
 }
 
 void QuallyFsm::requestMode(const std::string & mode)

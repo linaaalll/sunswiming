@@ -36,6 +36,7 @@ qually_fsm:
     start_depth_m: 0.3
     start_hold_sec: 3.0
     start_delay_sec: 5.0      # countdown once everything is alive
+    sensor_rate_hz: 20.0      # ask ArduSub for depth + attitude this often (default is ~3 and ~9). 0 = don't ask
     max_run_sec: 90.0        # whole run longer than this -> ABORT
 
     # DIVE
