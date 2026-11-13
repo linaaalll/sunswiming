@@ -31,6 +31,8 @@ QuallyFsm::QuallyFsm()
   require_detector_ = declare_parameter<bool>("require_detector", true);
   start_delay_sec_ = declare_parameter<double>("start_delay_sec", 5.0);
   sensor_rate_hz_ = declare_parameter<double>("sensor_rate_hz", 20.0);
+  start_depth_m_ = declare_parameter<double>("start_depth_m", 0.0);
+  start_hold_sec_ = declare_parameter<double>("start_hold_sec", 3.0);
   max_run_sec_ = declare_parameter<double>("max_run_sec", 120.0);
 
   target_depth_m_ = declare_parameter<double>("target_depth_m", 0.8);
@@ -184,7 +186,35 @@ void QuallyFsm::stateWait()
   if (missing) {
     RCLCPP_INFO_THROTTLE(get_logger(), steady_clock_, 2000, "WAIT: %s", missing);
     state_entered_ = steadyNow();              // countdown only runs when all is good
+    underwater_ = false;
     return;
+  }
+
+  // Start trigger (start_depth_m > 0): nothing happens until someone holds the
+  // vehicle underwater for start_hold_sec. That is the "go" button when there
+  // is no tether and no keyboard. Lift it out again and everything resets.
+  if (start_depth_m_ > 0.0) {
+    if (depth_m_ < start_depth_m_) {
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), steady_clock_, 2000,
+        "WAIT: all good. Hold me underwater to start (depth %.2f m, need %.2f m)",
+        depth_m_, start_depth_m_);
+      underwater_ = false;
+      state_entered_ = steadyNow();
+      return;
+    }
+    if (!underwater_) {
+      underwater_ = true;
+      underwater_since_ = steadyNow();
+    }
+    const double held = (steadyNow() - underwater_since_).seconds();
+    if (held < start_hold_sec_) {
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), steady_clock_, 1000,
+        "WAIT: underwater, keep holding %.0fs", start_hold_sec_ - held);
+      state_entered_ = steadyNow();
+      return;
+    }
   }
 
   RCLCPP_INFO_THROTTLE(
@@ -358,8 +388,6 @@ void QuallyFsm::stateApproach()
       transitionTo(State::SEARCH, "gate lost, gg gang");
     }
   }
-
-  command(target_heading_deg_, 0.0, 0.0);
 }
 
 void QuallyFsm::stateCommit()
