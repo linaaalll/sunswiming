@@ -19,10 +19,10 @@ heading_controller:
     # Gains are in "effort per degree of error". All zero = no yaw at all.
     # Start with kp only. Change live with:
     #   ros2 param set /heading_controller kp 0.01
-    kp: 0.01
-    ki: 0.005
-    kd: 0.002
-    output_limit: 0.4         # never yaw harder than this
+    kp: 0.005
+    ki: 0.001
+    kd: 0.0
+    output_limit: 0.2         # never yaw harder than this
     integral_limit: 0.15      # the I term alone never exceeds this
 
 qually_fsm:
@@ -36,7 +36,7 @@ qually_fsm:
     start_depth_m: 0.3
     start_hold_sec: 3.0
     start_delay_sec: 5.0      # countdown once everything is alive
-    max_run_sec: 120.0        # whole run longer than this -> ABORT
+    max_run_sec: 90.0        # whole run longer than this -> ABORT
 
     # DIVE
     target_depth_m: 0.8
@@ -46,7 +46,7 @@ qually_fsm:
     # SEARCH
     search_effort: 0.2
     gate_confirm_frames: 5    # found this many frames in a row = real
-    search_timeout_sec: 40.0
+    search_timeout_sec: 15.0
 
     # APPROACH
     approach_effort: 0.25
