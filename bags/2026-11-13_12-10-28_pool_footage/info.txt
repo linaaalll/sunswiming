@@ -1,0 +1,46 @@
+run:      pool_footage
+started:  2026-11-13_12-10-28  (jetson clock, may be wrong)
+notes:    
+commit:   117345784e3cd5ec22ae2f1c004800b876945930
+branch:   main
+clean:    NO, uncommitted changes below
+camera:   True
+depth:    False
+
+uncommitted changes:
+ D ros2_ws/src/mavlink-gbp-release
+ D ros2_ws/src/mavros
+?? bags/
+
+topics:
+  /mavros/state
+  /mavros/statustext/recv
+  /mavros/imu/data
+  /mavros/imu/static_pressure
+  /mavros/global_position/rel_alt
+  /mavros/local_position/pose
+  /mavros/local_position/velocity_body
+  /mavros/vfr_hud
+  /mavros/battery
+  /mavros/rc/in
+  /mavros/rc/override
+  /mavros/rc/out
+  /zed/zed_node/odom
+  /zed/zed_node/pose
+  /zed/zed_node/pose/status
+  /zed/zed_node/imu/data
+  /zed/zed_node/obj_det/objects
+  /zed/zed_node/status/health
+  /rosout
+  /tf
+  /tf_static
+  /diagnostics
+  /qually/state
+  /qually/gate
+  /controller/target
+  /controller/debug
+  /cmd_vel
+  /qually/gate/debug_image/compressed
+  /qually/gate/mask/compressed
+  /zed/zed_node/rgb/color/rect/image/compressed
+  /zed/zed_node/rgb/color/rect/camera_info
