@@ -67,4 +67,11 @@ colour_gate_detector:
     hsv_low: [5, 40, 80]
     hsv_high: [84, 255, 255]
     min_area: 80              # blobs smaller than this (pixels) are noise
+    # The pole finder no longer uses the HSV range above (underwater the poles
+    # are the same hue as the water). It looks for thin vertical things that are
+    # DULLER than the open water beside them. Tuned on pool footage, 13 Nov.
+    sat_drop: 22              # how much duller than the water beside it (lower = sees fainter/farther poles, more false hits)
+    water_sat: 215            # "open water" is at least this saturated (0-255)
+    min_value: 110            # darker than this is the camera housing, ignored
+    min_height_frac: 0.06     # a pole is at least this tall, as a fraction of the image
     debug_every: 2            # publish the debug image every Nth frame

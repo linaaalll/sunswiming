@@ -44,6 +44,13 @@ class ColourGateDetector(Node):
         self.hsv_high = np.array(
             self.declare_parameter('hsv_high', [10, 255, 255]).value, dtype=np.uint8)
 
+        # The pole finder (see find_poles). Tuned on the pool footage of 13 Nov.
+        self.work_width = self.declare_parameter('work_width', 960).value
+        self.sat_drop = self.declare_parameter('sat_drop', 22).value          # how much duller than the water beside it
+        self.water_sat = self.declare_parameter('water_sat', 215).value       # "open water" = at least this saturated
+        self.min_value = self.declare_parameter('min_value', 110).value       # darker than this = the housing, ignore
+        self.min_height_frac = self.declare_parameter('min_height_frac', 0.06).value  # pole at least this tall (fraction of image)
+
         # A blob smaller than this many pixels is noise, not a pole.
         self.min_area = self.declare_parameter('min_area', 300).value
 
@@ -66,64 +73,84 @@ class ColourGateDetector(Node):
         """
         Look for the two gate poles in one image.
 
-        bgr: the camera image, a numpy array of shape (height, width, 3),
-             in OpenCV's blue-green-red order.
+        Return (left_x, right_x, confidence, mask), x in pixels of the full image,
+        or (None, None, 0.0, mask) when there is no believable pair.
 
-        Return (left_x, right_x, confidence, mask):
-            left_x, right_x  pixel column of each pole's centre, or None, None
-                             if you can't find two poles
-            confidence       0.0 to 1.0, how much you believe it
-            mask             the black/white mask you made (or None). It gets
-                             published so you can see what the threshold did.
+        HOW (from the pool footage of 13 Nov): underwater the poles are NOT
+        orange to the camera. Their hue is the same as the water's. What does
+        differ is saturation: open water is fully saturated cyan (S ~255), a
+        pole is duller (S 60-210). The floor is dull too, so a plain HSV range
+        cannot separate pole from floor. Instead we look for thin vertical
+        things that are duller than the open water right beside them.
         """
+        # work on a smaller copy: faster, and the sizes below are in its pixels
+        scale = self.work_width / bgr.shape[1]
+        small = cv2.resize(bgr, (self.work_width, int(bgr.shape[0] * scale)),
+                           interpolation=cv2.INTER_AREA)
+        height, width = small.shape[:2]
+        hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        sat = cv2.GaussianBlur(hsv[:, :, 1], (5, 5), 0)
 
-        # from colour -> mask
-        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        # Apply binary mask
-        mask = cv2.inRange(hsv, self.hsv_low, self.hsv_high)
+        # 1. saturation of what is beside each pixel (61 px wide: wider than a pole)
+        wide = cv2.getStructuringElement(cv2.MORPH_RECT, (61, 1))
+        around = cv2.morphologyEx(sat, cv2.MORPH_CLOSE, wide)
 
-        # clean up the mask
-        # The goal is to collect all the thin poles!
-        speck = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
-        gap = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 15))
+        # 2. pole pixel = much duller than its surroundings, and the
+        #    surroundings are open water (not floor, not wall)
+        stand_out = cv2.subtract(around, sat)
+        mask = ((stand_out > self.sat_drop) & (around > self.water_sat)).astype(np.uint8) * 255
 
-        # morphological opening = erosion -> dilation
-        # erosion removes white pixels around edges
-        # dilation expands the remianing white
+        # 3. ignore the dark housing at the edge of the picture, with a margin
+        lit = (hsv[:, :, 2] > self.min_value).astype(np.uint8) * 255
+        lit = cv2.erode(lit, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (81, 81)))
+        mask = cv2.bitwise_and(mask, lit)
+
+        # 4. clean up: remove specks, join a pole that got split
+        speck = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 7))
+        gap = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 25))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, speck)
-
-        # morphological closing = dilation -> erosion
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, gap)
+        full_mask = cv2.resize(mask, (bgr.shape[1], bgr.shape[0]),
+                               interpolation=cv2.INTER_NEAREST)
 
-        # looking for things that looks like pole
-        contours,_ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        poles = []
-
+        # 5. blobs that look like a pole: tall and thin
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        pieces = []
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            # too small aiya
-            if w*h < self.min_area:
+            if h < self.min_height_frac * height:
                 continue
-            # not tall and thin
             if h < 2.5 * w:
                 continue
-            poles.append((x + w / 2.0, y, h))
+            pieces.append((x + w / 2.0, y, h))          # centre column, top, height
+
+        # 6. the crossbar cuts each pole in two, and the surface mirrors it:
+        #    pieces in the same column are one pole
+        pieces.sort(key=lambda p: p[0])
+        poles = []
+        for x, y, h in pieces:
+            if poles and abs(x - poles[-1][0]) < 0.025 * width:
+                px, py, ph = poles[-1]
+                top, bottom = min(py, y), max(py + ph, y + h)
+                poles[-1] = ((px * ph + x * h) / (ph + h), top, bottom - top)
+            else:
+                poles.append((x, y, h))
 
         if len(poles) < 2:
-            return None, None, 0.0, mask
+            return None, None, 0.0, full_mask
 
-        # find the two tallest pole and see if they're similar
-        poles.sort(key=lambda p : p[2], reverse=True)
+        # 7. the two tallest: do they look like a pair?
+        poles.sort(key=lambda p: p[2], reverse=True)
         a, b = poles[0], poles[1]
+        alike = min(a[2], b[2]) / max(a[2], b[2])                    # 1.0 = same height
+        overlap = min(a[1] + a[2], b[1] + b[2]) - max(a[1], b[1])    # shared rows
+        apart = abs(a[0] - b[0])
+        if alike < 0.35 or overlap < 0.3 * min(a[2], b[2]) or apart < 0.05 * width:
+            return None, None, 0.0, full_mask
 
-        alike = min(a[2], b[2]) / max(a[2], b[2])
-        overlap = min(a[1] + a[2], b[1] + b[2]) - max(a[1], b[1])
+        # 8. back to full-image pixels, left one first
+        return min(a[0], b[0]) / scale, max(a[0], b[0]) / scale, alike, full_mask
 
-        if alike < 0.5 or overlap < 0.5 * min(a[2], b[2]):
-            return None, None, 0.0, mask
-
-        return min(a[0], b[0]), max(a[0], b[0]), alike, mask
-        
     # ------------------------------------------------------------------
     # written: ROS in, ROS out
     # ------------------------------------------------------------------
