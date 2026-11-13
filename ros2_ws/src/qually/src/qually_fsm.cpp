@@ -35,6 +35,10 @@ QuallyFsm::QuallyFsm()
   target_depth_m_ = declare_parameter<double>("target_depth_m", 0.8);
   depth_tolerance_m_ = declare_parameter<double>("depth_tolerance_m", 0.1);
   dive_effort_ = declare_parameter<double>("dive_effort", 0.3);
+  depth_mode_ = declare_parameter<std::string>("depth_mode", "ALT_HOLD");
+  depth_kp_ = declare_parameter<double>("depth_kp", 1.0);
+  depth_ki_ = declare_parameter<double>("depth_ki", 0.3);
+  depth_max_effort_ = declare_parameter<double>("depth_max_effort", 0.6);
 
   search_effort_ = declare_parameter<double>("search_effort", 0.2);
   gate_confirm_frames_ = declare_parameter<int>("gate_confirm_frames", 5);
@@ -198,7 +202,7 @@ void QuallyFsm::stateArm()
   }
 
   if (timeInState() > 15.0) {
-    transitionTo(State::ABORT, "could not get ALT_HOLD + armed in 15s");
+    transitionTo(State::ABORT, "could not get the mode + armed in 15s");
     return;
   }
 
@@ -206,8 +210,8 @@ void QuallyFsm::stateArm()
   // when each one has really happened.
   const bool can_ask = (steadyNow() - last_request_).seconds() > 1.0;
 
-  if (mavros_state_.mode != "ALT_HOLD") {
-    if (can_ask) {requestMode("ALT_HOLD");}
+  if (mavros_state_.mode != depth_mode_) {
+    if (can_ask) {requestMode(depth_mode_);}
     return;
   }
   if (!mavros_state_.armed) {
@@ -219,7 +223,8 @@ void QuallyFsm::stateArm()
   // aim it at the gate before you launch.
   straight_heading_deg_ = heading_deg_;
   target_heading_deg_ = heading_deg_;
-  transitionTo(State::DIVE, "armed in ALT_HOLD");
+  depth_integral_ = 0.0;
+  transitionTo(State::DIVE, "armed in " + depth_mode_);
 }
 
 void QuallyFsm::stateFinish()
@@ -277,14 +282,19 @@ void QuallyFsm::stateDive()
 
   // how will the rov be pushed
   double vertical = 0.0;
-  if (error > depth_tolerance_m_) {
-    vertical = -dive_effort_;
-  } else if (error < -depth_tolerance_m_) {
-    vertical = dive_effort_;
+  bool at_depth = std::abs(error) < depth_tolerance_m_;
+  if (depth_mode_ == "ALT_HOLD") {
+    // ArduSub holds depth, we only nudge the stick up or down
+    if (error > depth_tolerance_m_) {
+      vertical = -dive_effort_;
+    } else if (error < -depth_tolerance_m_) {
+      vertical = dive_effort_;
+    }
   }
+  // any other mode: leave vertical at 0, command() fills in our own depth hold
 
   // see how long we stay at the depth
-  if (vertical == 0.0) {
+  if (at_depth) {
     depth_ok_ticks_ ++;
   } else {
     depth_ok_ticks_ = 0;
@@ -294,7 +304,7 @@ void QuallyFsm::stateDive()
   if (depth_ok_ticks_ >= 20) {
     depth_ok_ticks_ = 0;
     transitionTo(State::SEARCH, "depth steady");
-  } else if (timeInState() > 20.0) {
+  } else if (timeInState() > 30.0) {
     transitionTo(State::ABORT, "depth failed to reach");
   }
 
@@ -401,12 +411,38 @@ double QuallyFsm::timeInRun() const
 
 void QuallyFsm::command(double heading_deg, double forward, double vertical)
 {
+  // Nobody asked for a vertical push: hold depth. In ALT_HOLD that means
+  // sending 0 (ArduSub does it). In any other mode we do it ourselves.
+  if (vertical == 0.0) {
+    vertical = holdDepth();
+  }
+
   interfaces::msg::ControlTarget msg;
   msg.hold_heading = true;
   msg.heading_deg = heading_deg;
   msg.forward = forward;
   msg.vertical = vertical;
   target_pub_->publish(msg);
+}
+
+// Our own depth hold, for when ArduSub's ALT_HOLD is too gentle to pull the
+// vehicle under (pool run, 13 Nov: it only ever used about a third of the
+// down-thrust and the vehicle stayed at the surface).
+// Called once per tick (10 Hz). Returns the vertical effort, negative = down.
+double QuallyFsm::holdDepth()
+{
+  if (depth_mode_ == "ALT_HOLD" || dry_run_) {
+    return 0.0;
+  }
+  const double error = target_depth_m_ - depth_m_;          // + = need to go deeper
+
+  // I: slowly learns how much push it takes just to stay down (buoyancy).
+  // Capped so it can never ask for more than depth_max_effort on its own.
+  const double integral_limit = depth_ki_ > 0.0 ? depth_max_effort_ / depth_ki_ : 0.0;
+  depth_integral_ = std::clamp(depth_integral_ + error * 0.1, -integral_limit, integral_limit);
+
+  const double push = depth_kp_ * error + depth_ki_ * depth_integral_;   // + = push down
+  return -std::clamp(push, -depth_max_effort_, depth_max_effort_);
 }
 
 void QuallyFsm::commandStop()

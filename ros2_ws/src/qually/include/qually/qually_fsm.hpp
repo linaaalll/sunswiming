@@ -102,6 +102,7 @@ private:
 
   // ---- talking to ArduSub -------------------------------------------------
   void requestMode(const std::string & mode);
+  double holdDepth();                         // vertical effort for our own depth hold
   void requestArm(bool arm);
 
   // ---- what we know about the world (updated by subscribers) -------------
@@ -132,6 +133,7 @@ private:
   double last_separation_ = 0.0;              // APPROACH: gate width last time we saw it
   int turn_ok_ticks_ = 0;                     // TURN: calls in a row pointing the right way
   int passes_done_ = 0;                       // how many times we went through the gate
+  double depth_integral_ = 0.0;               // our depth hold: running total of the error
 
   // ---- our own memory ------------------------------------------------------
   State state_ = State::WAIT;
@@ -155,6 +157,10 @@ private:
   double target_depth_m_;       // DIVE: how deep
   double depth_tolerance_m_;    // DIVE: close enough
   double dive_effort_;          // DIVE: how hard to push down (0 to 1)
+  std::string depth_mode_;      // ALT_HOLD = ArduSub holds depth, STABILIZE = we do
+  double depth_kp_;             // our depth hold: effort per metre of error
+  double depth_ki_;             // our depth hold: learns the push needed to beat buoyancy
+  double depth_max_effort_;     // our depth hold: never push harder than this
 
   double search_effort_;        // SEARCH: forward effort
   int gate_confirm_frames_;     // SEARCH: this many found frames in a row

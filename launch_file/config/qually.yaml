@@ -41,7 +41,15 @@ qually_fsm:
     # DIVE
     target_depth_m: 0.8
     depth_tolerance_m: 0.1
-    dive_effort: 0.3
+    dive_effort: 0.3          # ALT_HOLD only: stick push while diving
+
+    # Who holds the depth?
+    #   ALT_HOLD   ArduSub does. Gentle: on 13 Nov it could not pull the robot under.
+    #   STABILIZE  we do, with the three numbers below. Direct thrust.
+    depth_mode: STABILIZE
+    depth_kp: 1.0             # effort per metre of depth error
+    depth_ki: 0.3             # learns the push needed to beat buoyancy
+    depth_max_effort: 0.6     # never push up or down harder than this
 
     # SEARCH
     search_effort: 0.2
