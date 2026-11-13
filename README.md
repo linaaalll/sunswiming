@@ -36,8 +36,18 @@ ssh -J pi@172.20.10.8 jetson@192.168.1.69
 How to get into blueos, ehhhh several ways
 1. through the current web ip if connected to phone address (for me its 172.20.10.8)
 
-How to actually have fun in the boomboclat repo
+To change things
 1. update via this shitass comment after git push everything from local 
 rsync -av -e "ssh -J pi@172.20.10.8" --exclude '/ros2_ws/build' --exclude '/ros2_ws/install' --exclude '/ros2_ws/log' --exclude '/ros2_ws/src/mavros' --exclude '/ros2_ws/src/mavlink-gbp-release' ~/sunswiming/ jetson@192.168.1.69:~/lina/sunswiming/
 
 2. 
+
+
+After ssh in please always run
+~timedatectl status
+this allows the clock is synced
+
+ssh -t jetson@192.168.1.69 "sudo date -u -s '$(date -u +'%Y-%m-%d %H:%M:%S')'"
+
+To take the bag into local
+scp -r -o ProxyJump=pi@PI_ADDRESS jetson@192.168.1.69:~/lina/sunswiming/bags/[the name of the fucking bag] ~/sunswiming/bags/

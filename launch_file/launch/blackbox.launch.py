@@ -171,7 +171,15 @@ def start_recording(context):
 
     return [
         ExecuteProcess(
-            cmd=['ros2', 'bag', 'record', '-o', str(run_dir / 'bag'), *topics],
+            # The e-stop cuts ALL power, so the recorder can die at any moment
+            # without closing the bag. Two things keep the damage small:
+            #   -d 10       start a new file every 10 s: files already finished
+            #               are safe, only the newest one is at risk
+            #   resilient   write each file so that a half-written one can
+            #               still be opened afterwards
+            # After a power cut the bag needs:  ros2 bag reindex <run>/bag
+            cmd=['ros2', 'bag', 'record', '-o', str(run_dir / 'bag'),
+                 '-d', '10', '--storage-preset-profile', 'resilient', *topics],
             output='screen',
         )
     ]
